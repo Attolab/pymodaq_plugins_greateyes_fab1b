@@ -1,11 +1,39 @@
-# PyMoDAQ Plugins
+pymodaq_plugins_greateyes (Greateyes)
+#############################################
 
-PyMoDAQ, Modular Data Acquisition with Python, is a set of **python** modules used to perform automated measurements. 
+.. image:: https://img.shields.io/pypi/v/pymodaq_plugins_greateyes.svg
+   :target: https://pypi.org/project/pymodaq_plugins_greateyes/
+   :alt: Latest Version
 
-This repository contains various hardware plugins compatible with PyMoDAQ
+.. image:: https://readthedocs.org/projects/pymodaq/badge/?version=latest
+   :target: https://pymodaq.readthedocs.io/en/stable/?badge=latest
+   :alt: Documentation Status
 
-For an exhaustive list of the available plugins, see https://github.com/CEMES-CNRS/pymodaq_plugin_manager/blob/main/pymodaq_plugin_manager/doc/PluginList.md
+.. image:: https://github.com/CEMES-CNRS/pymodaq_plugins_greateyes/workflows/Upload%20Python%20Package/badge.svg
+    :target: https://github.com/CEMES-CNRS/pymodaq_plugins_greateyes
 
-GitHub repo: https://github.com/CEMES-CNRS
+PyMoDAQ plugin for instruments from Greateyes (ALEX, ELSE, GE XXXX)
 
-Documentation: http://pymodaq.cnrs.fr/
+
+Authors
+=======
+
+* R. Geneaux
+
+Instruments
+===========
+Below is the list of instruments included in this plugin
+
+Viewer1D
++++++++++
+
+* **GreateyesCCD**: Greateyes CCD cameras using the SDK
+
+Installation notes
+==================
+This plugin uses the Greateyes C++ SDK (greateyes.dll) and the python wrapper developed by Greateyes. If you do not have either of them, contact Greateyes. 
+
+Before using the plugin, it is recommended to test your connection to the camera with the greateyes Vision software.
+
+
+Tested on Windows10 with pymodaq 3.1.0, using USB connection.
