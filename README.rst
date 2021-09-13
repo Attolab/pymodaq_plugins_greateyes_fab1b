@@ -18,7 +18,7 @@ PyMoDAQ plugin for instruments from Greateyes (ALEX, ELSE, GE XXXX)
 Authors
 =======
 
-* R. Geneaux
+* Romain Geneaux
 
 Instruments
 ===========
