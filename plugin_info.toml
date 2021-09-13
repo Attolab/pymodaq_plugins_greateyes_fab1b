@@ -1,14 +1,13 @@
 ## To modify by developper(s) of the plugin
 
 [plugin-info]
-SHORT_PLUGIN_NAME = 'template'  #to be modified, for instance daqmx then rename the module name:
-# (pymodaq_plugins_template become pymodaq_plugins_daqmx for instance)
+SHORT_PLUGIN_NAME = 'greateyes'
 
-package-url = 'https://github.com/CEMES-CNRS/pymodaq_plugins_template' #to modify
+package-url = 'https://github.com/Attolab/pymodaq_plugins_greateyes'
 description = 'some word about your plugin'
 
-author = 'Author Name'
-author-email = 'Author email'
+author = 'PyMoDAQ plugin for instruments from Greateyes (ALEX, ELSE, GE XXXX)'
+author-email = 'romain.geneaux@cea.fr'
 license = 'MIT'
 
 [plugin-install]

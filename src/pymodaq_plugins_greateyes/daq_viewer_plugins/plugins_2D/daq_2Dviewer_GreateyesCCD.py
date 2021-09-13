@@ -4,28 +4,30 @@ from pymodaq.daq_utils.daq_utils import ThreadCommand, getLineInfo, DataFromPlug
 from pymodaq.daq_viewer.utility_classes import DAQ_Viewer_base, comon_parameters
 
 
-class DAQ_1DViewer_Template(DAQ_Viewer_base):
+class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
     """
     """
-    params = comon_parameters+[
+    params = comon_parameters + [
         ## TODO for your custom plugin
         # elements to be added here as dicts in order to control your custom stage
         ############
-        ]
+    ]
 
     def __init__(self, parent=None, params_state=None):
         super().__init__(parent, params_state)
 
         self.x_axis = None
+        self.y_axis = None
 
     def commit_settings(self, param):
         """
         """
         ## TODO for your custom plugin
         if param.name() == "a_parameter_you've_added_in_self.params":
-           self.controller.your_method_to_apply_this_param_change()
+            self.controller.your_method_to_apply_this_param_change()
 #        elif ...
-        ##
+
+    ##
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -43,7 +45,7 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         """
 
         try:
-            self.status.update(edict(initialized=False,info="",x_axis=None,y_axis=None,controller=None))
+            self.status.update(edict(initialized=False, info="", x_axis=None, y_axis=None, controller=None))
             if self.settings.child(('controller_status')).value() == "Slave":
                 if controller is None:
                     raise Exception('no controller has been defined externally while this detector is a slave one')
@@ -56,17 +58,21 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
 
             ## TODO for your custom plugin
             # get the x_axis (you may want to to this also in the commit settings if x_axis may have changed
-            data_x_axis = self.controller.your_method_to_get_the_x_axis() # if possible
+            data_x_axis = self.controller.your_method_to_get_the_x_axis()  # if possible
             self.x_axis = Axis(data=data_x_axis, label='', units='')
             self.emit_x_axis()
 
+            # get the y_axis (you may want to to this also in the commit settings if y_axis may have changed
+            data_y_axis = self.controller.your_method_to_get_the_y_axis()  # if possible
+            self.y_axis = Axis(data=data_y_axis, label='', units='')
+            self.emit_y_axis()
 
             ## TODO for your custom plugin
-            #initialize viewers pannel with the future type of data
-            self.data_grabed_signal_temp.emit([DataFromPlugins(name='Mock1',data=[np.array([0.,0.,...]),
-                                                                             np.array([0.,0.,...])],
-                                                          dim='Data1D', labels=['Mock1', 'label2'],
-                                                          x_axis=self.x_axis),])
+            # initialize viewers pannel with the future type of data
+            self.data_grabed_signal_temp.emit([DataFromPlugins(name='Mock1', data=["2D numpy array"],
+                                                  dim='Data2D', labels=['dat0'],
+                                                  x_axis=self.x_axis,
+                                                  y_axis=self.y_axis), ])
 
             ##############################
 
@@ -76,9 +82,9 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
             return self.status
 
         except Exception as e:
-            self.emit_status(ThreadCommand('Update_Status',[getLineInfo()+ str(e),'log']))
-            self.status.info=getLineInfo()+ str(e)
-            self.status.initialized=False
+            self.emit_status(ThreadCommand('Update_Status', [getLineInfo() + str(e), 'log']))
+            self.status.info = getLineInfo() + str(e)
+            self.status.initialized = False
             return self.status
 
     def close(self):
@@ -102,19 +108,18 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         ##synchrone version (blocking function)
         data_tot = self.controller.your_method_to_start_a_grab_snap()
         self.data_grabed_signal.emit([DataFromPlugins(name='Mock1', data=data_tot,
-                                                          dim='Data1D', labels=['dat0', 'data1'])])
+                                                      dim='Data2D', labels=['dat0'])])
         #########################################################
 
         ##asynchrone version (non-blocking function with callback)
         self.controller.your_method_to_start_a_grab_snap(self.callback)
         #########################################################
 
-
     def callback(self):
         """optional asynchrone method called when the detector has finished its acquisition of data"""
         data_tot = self.controller.your_method_to_get_data_from_buffer()
         self.data_grabed_signal.emit([DataFromPlugins(name='Mock1', data=data_tot,
-                                                  dim='Data1D', labels=['dat0', 'data1'])])
+                                                      dim='Data2D', labels=['dat0'])])
 
     def stop(self):
 
