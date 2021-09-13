@@ -24,7 +24,7 @@ Instruments
 ===========
 Below is the list of instruments included in this plugin
 
-Viewer1D
+Viewer2D
 +++++++++
 
 * **GreateyesCCD**: Greateyes CCD cameras using the SDK
