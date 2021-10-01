@@ -121,6 +121,18 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                     "value": False,
                     "default": False,
                 },
+                {
+                    "title": "Capacity Mode",
+                    "name": "capacity_mode",
+                    "type": "list",
+                    "values": ["Low Noise", "High Signal"],
+                },
+                {
+                    "title": "Gain Mode",
+                    "name": "gain_mode",
+                    "type": "list",
+                    "values": ["Max Dynamic Range", "Highest Sensitivity"],
+                },
 
                 {
                     "title": "Timing settings",
@@ -463,7 +475,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             (1, self.controller.GetMaxExposureTime())
         )
 
-        self.controller.SupportedSensorFeature(0)  # Supports Capacity Mode? # TODO
+        if not self.controller.SupportedSensorFeature(0):  # Supports Capacity Mode?
+            self.settings.child("acquisition_settings", "capacity_mode").hide()
 
         if self.controller.SupportedSensorFeature(1):  # Checks if Horizontal Binning is supported
             self.settings.child("acquisition_settings", "image_settings", "bin_x").setLimits(
@@ -476,12 +489,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             (1, self.controller.GetMaxBinningY())
         )
 
-        if self.controller.SupportedSensorFeature(2):  # Checks if Horizontal Cropping is supported
-            # TODO
-            #  self.params.children("camera_settings", "bin_x").setLimits(
-            #  (1, self.controller.GetMaxBinningX()))
-            pass
-        else:
+        if not self.controller.SupportedSensorFeature(2):  # Checks if Horizontal Cropping is supported
             self.settings.child("acquisition_settings", "image_settings", "crop_x").hide()
 
         # GetNumberOfSensorOutputModes()
@@ -600,6 +608,20 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 self.timerTemp = self.startTimer(3000)
             else:
                 self.killTimer(self.timerTemp)
+
+        elif param.name() == "capacity_mode":
+            if param.value() == "Low Noise":
+                self.controller.SetupCapacityMode(False)
+            elif param.value() == "High Signal":
+                self.controller.SetupCapacityMode(True)
+
+        elif param.name() == "gain_mode":
+            if param.value() == "Max Dynamic Range":
+                self.controller.SetupGain(0)
+            elif param.value() == "Highest Sensitivity":
+                self.controller.SetupGain(1)
+
+
         self.update_status()
 
     def get_xaxis(self):
