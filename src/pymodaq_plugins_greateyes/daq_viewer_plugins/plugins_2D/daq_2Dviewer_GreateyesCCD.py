@@ -349,7 +349,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                                 correctBias=self.settings.child(
                                     "acquisition_settings", "do_correct_bias"
                                 ).value()
-                            )
+                            ).astype(np.float)
                         ],
                         dim="Data2D",
                         labels=["dat0"],
@@ -837,7 +837,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                     [
                         DataFromPlugins(
                             name="Camera",
-                            data=[np.squeeze(data.reshape(size_y, size_x))],
+                            data=[np.squeeze(data.reshape(size_y, size_x)).astype(np.float)],
                             dim=self.data_shape,
                             labels="Camera",
                         )
