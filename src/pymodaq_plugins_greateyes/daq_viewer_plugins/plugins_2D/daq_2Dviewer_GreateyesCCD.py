@@ -572,6 +572,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         if not self.settings.child("temperature_settings", "check_temperature").value():
             self.killTimer(self.timerTemp)
 
+        self.update_image()
+        
         # Set up callback
         callback = GreateyesCallback(self.controller.DllIsBusy)
         callback.exposure = self.settings.child(
