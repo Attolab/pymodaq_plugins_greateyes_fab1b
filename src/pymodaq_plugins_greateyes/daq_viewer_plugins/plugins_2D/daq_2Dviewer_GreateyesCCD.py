@@ -327,6 +327,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             else:
                 self.controller = ge
 
+                #add current exposure time as a controller property
+                self.controller.current_exposure_time = 1
+
             self.update_status()
             self.ini_greateyes_camera()
 
@@ -376,6 +379,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.status.initialized = False
             self.emit_status(ThreadCommand("close_splash"))
             return self.status
+
 
     def ini_greateyes_camera(self):
         # Disconnect in case it was not done properly
@@ -554,6 +558,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 "acquisition_settings", "timing_settings", "exposure_time"
             ).value()
         )
+        self.controller.current_exposure_time = self.settings.child("acquisition_settings", "timing_settings", "exposure_time").value()
 
         # Temperature control
         # =================================================
@@ -621,6 +626,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         elif param.name() == "exposure_time":
             self.controller.SetExposure(param.value())
+            self.controller.current_exposure_time = param.value()
             # Update callback
             self.callback_thread.callback.exposure = param.value()
 
@@ -779,6 +785,10 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         kwargs: (dict) of others optionals arguments
         """
         try:
+            self.settings.child("acquisition_settings", "timing_settings", "exposure_time").setValue(
+                self.controller.current_exposure_time
+            )
+
             self.settings.child("camera_settings", "camera_status").setValue(
                 "Acquiring..."
             )
