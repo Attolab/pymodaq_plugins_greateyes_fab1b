@@ -32,7 +32,7 @@ class DAQ_Move_GEExposureController(DAQ_Move_base):
         -------
         float: The position obtained after scaling conversion.
         """
-        pos = self.controller.GetCurrentExposureTime()  # when writing your own plugin replace this line
+        pos = self.controller.current_exposure_time
         pos = self.get_position_with_scaling(pos)
         return pos
 

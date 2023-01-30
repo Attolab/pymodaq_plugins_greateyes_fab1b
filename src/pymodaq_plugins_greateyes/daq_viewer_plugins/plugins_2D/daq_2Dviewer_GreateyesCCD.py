@@ -327,7 +327,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             else:
                 self.controller = ge
 
-                #add current exposure time as a controller property
+                # add current exposure time as a controller property
                 self.controller.current_exposure_time = 1
 
             self.update_status()
@@ -380,7 +380,6 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.emit_status(ThreadCommand("close_splash"))
             return self.status
 
-
     def ini_greateyes_camera(self):
         # Disconnect in case it was not done properly
         self.settings.child("camera_settings", "dll_version").setValue(
@@ -398,8 +397,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             )
         # or Ethernet (needs connection to camera server)
         elif (
-            self.settings.child("camera_settings", "connection_type").value()
-            == "Ethernet"
+                self.settings.child("camera_settings", "connection_type").value()
+                == "Ethernet"
         ):
             connectionSetupWorked = ge.SetupCameraInterface(
                 self.controller.connectionType_Ethernet,
@@ -466,8 +465,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         else:
             self.controller.DisconnectCamera()
             if (
-                self.settings.child("camera_settings", "connection_type").value()
-                == "Ethernet"
+                    self.settings.child("camera_settings", "connection_type").value()
+                    == "Ethernet"
             ):
                 self.controller.DisconnectCameraServer()
             raise Exception("Could not connect to camera; " + self.controller.StatusMSG)
@@ -490,7 +489,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.settings.child("acquisition_settings", "capacity_mode").hide()
 
         if self.controller.SupportedSensorFeature(
-            1
+                1
         ):  # Checks if Horizontal Binning is supported
             self.settings.child(
                 "acquisition_settings", "image_settings", "bin_x"
@@ -505,7 +504,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         ).setLimits((1, self.controller.GetMaxBinningY()))
 
         if not self.controller.SupportedSensorFeature(
-            2
+                2
         ):  # Checks if Horizontal Cropping is supported
             self.settings.child(
                 "acquisition_settings", "image_settings", "crop_x"
@@ -522,12 +521,12 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         for index, speed in enumerate(speeds):
             # try to set camera to the readout speed
             if self.controller.SetReadOutSpeed(
-                eval(
-                    "self.controller.readoutSpeed_"
-                    + str(speed)
-                    + "_"
-                    + speedUnits[index]
-                )
+                    eval(
+                        "self.controller.readoutSpeed_"
+                        + str(speed)
+                        + "_"
+                        + speedUnits[index]
+                    )
             ):
                 availableSpeeds.append(str(speed) + " " + speedUnits[index])
         self.settings.child(
@@ -558,7 +557,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 "acquisition_settings", "timing_settings", "exposure_time"
             ).value()
         )
-        self.controller.current_exposure_time = self.settings.child("acquisition_settings", "timing_settings", "exposure_time").value()
+        self.controller.current_exposure_time = self.settings.child("acquisition_settings", "timing_settings",
+                                                                    "exposure_time").value()
 
         # Temperature control
         # =================================================
@@ -578,7 +578,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.killTimer(self.timerTemp)
 
         self.update_image()
-        
+
         # Set up callback
         callback = GreateyesCallback(self.controller.DllIsBusy)
         callback.exposure = self.settings.child(
@@ -637,7 +637,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         elif param.name() == "readout_speed":
             speed, unit = param.value().split()
             if not self.controller.SetReadOutSpeed(
-                eval("self.controller.readoutSpeed_" + speed + "_" + unit)
+                    eval("self.controller.readoutSpeed_" + speed + "_" + unit)
             ):
                 self.emit_status(
                     ThreadCommand(
@@ -646,7 +646,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 )
 
         elif param.name() in iter_children(
-            self.settings.child("acquisition_settings", "image_settings")
+                self.settings.child("acquisition_settings", "image_settings")
         ):
             self.update_image()
 
@@ -764,8 +764,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         """
         if self.controller.DisconnectCamera():
             if (
-                self.settings.child("camera_settings", "connection_type").value()
-                == "Ethernet"
+                    self.settings.child("camera_settings", "connection_type").value()
+                    == "Ethernet"
             ):
                 if ge.DisconnectCameraServer():
                     msg = "Successfully disconnected Camera Server and Camera"
@@ -785,9 +785,11 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         kwargs: (dict) of others optionals arguments
         """
         try:
+            # Set exposure time if it was changed externally by the controller
             self.settings.child("acquisition_settings", "timing_settings", "exposure_time").setValue(
                 self.controller.current_exposure_time
             )
+            self.commit_settings(self.settings.child("acquisition_settings", "timing_settings", "exposure_time"))
 
             self.settings.child("camera_settings", "camera_status").setValue(
                 "Acquiring..."
@@ -862,7 +864,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 QtWidgets.QApplication.processEvents()  # here to be sure the timeevents are executed even if in continuous grab mode
 
                 if self.settings.child(
-                    "acquisition_settings", "timing_settings", "check_meas_time"
+                        "acquisition_settings", "timing_settings", "check_meas_time"
                 ):
                     self.settings.child(
                         "acquisition_settings", "timing_settings", "last_meas_time"
@@ -885,8 +887,8 @@ class GreateyesCallback(QtCore.QObject):
     data_sig = QtCore.pyqtSignal()
 
     def __init__(
-        self,
-        wait_fn,
+            self,
+            wait_fn,
     ):
         super(GreateyesCallback, self).__init__()
         self.wait_fn = wait_fn
@@ -898,7 +900,7 @@ class GreateyesCallback(QtCore.QObject):
         t_meas = 0
         dt = 5  # refresh rate in ms
         t_crit = (
-            self.exposure + self.timeout
+                self.exposure + self.timeout
         )  # time after which we cancel the measurement
 
         while self.wait_fn():  # DLL is busy
