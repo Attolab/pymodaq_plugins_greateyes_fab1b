@@ -24,7 +24,7 @@ import greateyesSDK as ge
 class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
     """ """
 
-    callback_signal = QtCore.pyqtSignal()
+    callback_signal = QtCore.pyqtSignal(int)
     hardware_averaging = False
     params = comon_parameters + [
         {
@@ -194,8 +194,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                             "title": "Vertical binning",
                             "name": "bin_y",
                             "type": "int",
-                            "value": 1,
-                            "default": 1,
+                            "value": 515,
+                            "default": 515,
                             "min": 1,
                         },
                         {
@@ -284,8 +284,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         self.x_axis = None
         self.y_axis = None
         self.data_shape = None
-        self.controller = None
+        self.camera_controller = None
         self.callback_thread = None
+        self.buffer = []
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -323,12 +324,12 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                         "no controller has been defined externally while this detector is a slave one"
                     )
                 else:
-                    self.controller = controller
+                    self.camera_controller = controller
             else:
-                self.controller = ge
+                self.camera_controller = ge
 
                 # add current exposure time as a controller property
-                self.controller.current_exposure_time = 1
+                self.camera_controller.current_exposure_time = 1
 
             self.update_status()
             self.ini_greateyes_camera()
@@ -338,36 +339,37 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.status.x_axis = self.x_axis
             self.status.y_axis = self.y_axis
 
-            # initialize viewers pannel with the future type of data
-            # we perform a blocking measurement for simplicity here.
-
-            self.emit_status(ThreadCommand("show_splash", ["Taking one image"]))
-
-            self.data_grabed_signal_temp.emit(
-                [
-                    DataFromPlugins(
-                        name="CCD Image",
-                        data=[
-                            self.controller.PerformMeasurement_Blocking_DynBitDepth(
-                                correctBias=self.settings.child(
-                                    "acquisition_settings", "do_correct_bias"
-                                ).value()
-                            ).astype(np.float)
-                        ],
-                        dim="Data2D",
-                        labels=["dat0"],
-                        x_axis=self.y_axis,
-                        y_axis=self.x_axis,
-                    ),
-                ]
-            )
+            self.grab_data(live=False)
+            # # initialize viewers pannel with the future type of data
+            # # we perform a blocking measurement for simplicity here.
+            #
+            # self.emit_status(ThreadCommand("show_splash", ["Taking one image"]))
+            #
+            # self.data_grabed_signal_temp.emit(
+            #     [
+            #         DataFromPlugins(
+            #             name="CCD Image",
+            #             data=[
+            #                 self.camera_controller.PerformMeasurement_Blocking_DynBitDepth(
+            #                     correctBias=self.settings.child(
+            #                         "acquisition_settings", "do_correct_bias"
+            #                     ).value()
+            #                 ).astype(float)
+            #             ],
+            #             dim="Data2D",
+            #             labels=["dat0"],
+            #             x_axis=self.y_axis,
+            #             y_axis=self.x_axis,
+            #         ),
+            #     ]
+            # )
             self.settings.child(
                 "acquisition_settings", "timing_settings", "last_meas_time"
-            ).setValue("{:.1f}".format(self.controller.GetLastMeasTimeNeeded() * 1000))
+            ).setValue("{:.1f}".format(self.camera_controller.GetLastMeasTimeNeeded() * 1000))
 
             self.status.info = "Camera initialized correctly"
             self.status.initialized = True
-            self.status.controller = self.controller
+            self.status.controller = self.camera_controller
             self.emit_status(ThreadCommand("close_splash"))
             return self.status
 
@@ -383,17 +385,17 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
     def ini_greateyes_camera(self):
         # Disconnect in case it was not done properly
         self.settings.child("camera_settings", "dll_version").setValue(
-            self.controller.GetDLLVersion()
+            self.camera_controller.GetDLLVersion()
         )
-        self.controller.DisconnectCamera()
-        self.controller.DisconnectCameraServer()
+        self.camera_controller.DisconnectCamera()
+        self.camera_controller.DisconnectCameraServer()
 
         # Connection setup
         # ===========================
         # USB
         if self.settings.child("camera_settings", "connection_type").value() == "USB":
             connectionSetupWorked = ge.SetupCameraInterface(
-                self.controller.connectionType_USB
+                self.camera_controller.connectionType_USB
             )
         # or Ethernet (needs connection to camera server)
         elif (
@@ -401,11 +403,11 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 == "Ethernet"
         ):
             connectionSetupWorked = ge.SetupCameraInterface(
-                self.controller.connectionType_Ethernet,
+                self.camera_controller.connectionType_Ethernet,
                 ipAddress=self.settings.child("camera_settings", "camera_IP").value(),
             )
             if connectionSetupWorked:
-                connectionSetupWorked = self.controller.ConnectToSingleCameraServer()
+                connectionSetupWorked = self.camera_controller.ConnectToSingleCameraServer()
                 if connectionSetupWorked:
                     self.emit_status(
                         ThreadCommand("show_splash", ["Connected to Camera Server"])
@@ -423,7 +425,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         # Connection to camera
         # ====================
-        N_Cams = self.controller.GetNumberOfConnectedCams()
+        N_Cams = self.camera_controller.GetNumberOfConnectedCams()
         CameraModel = []
 
         if N_Cams == 1:
@@ -431,7 +433,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         elif N_Cams > 1:
             compatible_cameras = []
             for cam_addr in range(N_Cams):
-                if self.controller.ConnectCamera(CameraModel, addr=cam_addr):
+                if self.camera_controller.ConnectCamera(CameraModel, addr=cam_addr):
                     compatible_cameras.append(cam_addr)
             if len(compatible_cameras) == 1:
                 addr = compatible_cameras[0]
@@ -442,7 +444,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         elif N_Cams == 0:
             raise Exception("No Camera was found.")
 
-        CameraConnected = self.controller.ConnectCamera(model=CameraModel, addr=addr)
+        CameraConnected = self.camera_controller.ConnectCamera(model=CameraModel, addr=addr)
         if CameraConnected:
             self.settings.child("camera_settings", "camera_model_id").setValue(
                 CameraModel[0]
@@ -454,22 +456,22 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 ThreadCommand("show_splash", ["Connected to Camera " + CameraModel[1]])
             )
 
-            if self.controller.InitCamera(addr=addr):
+            if self.camera_controller.InitCamera(addr=addr):
                 self.emit_status(ThreadCommand("show_splash", ["Camera Initialized"]))
             else:
-                self.controller.DisconnectCamera()
+                self.camera_controller.DisconnectCamera()
                 raise Exception(
-                    "Could not connect to camera; " + self.controller.StatusMSG
+                    "Could not connect to camera; " + self.camera_controller.StatusMSG
                 )
 
         else:
-            self.controller.DisconnectCamera()
+            self.camera_controller.DisconnectCamera()
             if (
                     self.settings.child("camera_settings", "connection_type").value()
                     == "Ethernet"
             ):
-                self.controller.DisconnectCameraServer()
-            raise Exception("Could not connect to camera; " + self.controller.StatusMSG)
+                self.camera_controller.DisconnectCameraServer()
+            raise Exception("Could not connect to camera; " + self.camera_controller.StatusMSG)
 
         self.update_status()
 
@@ -479,21 +481,21 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             ThreadCommand("show_splash", ["Obtaining Camera parameters..."])
         )
         self.settings.child("camera_settings", "firmware_version").setValue(
-            self.controller.GetFirmwareVersion()
+            self.camera_controller.GetFirmwareVersion()
         )
         self.settings.child(
             "acquisition_settings", "timing_settings", "exposure_time"
-        ).setLimits((1, self.controller.GetMaxExposureTime()))
+        ).setLimits((1, self.camera_controller.GetMaxExposureTime()))
 
-        if not self.controller.SupportedSensorFeature(0):  # Supports Capacity Mode?
+        if not self.camera_controller.SupportedSensorFeature(0):  # Supports Capacity Mode?
             self.settings.child("acquisition_settings", "capacity_mode").hide()
 
-        if self.controller.SupportedSensorFeature(
+        if self.camera_controller.SupportedSensorFeature(
                 1
         ):  # Checks if Horizontal Binning is supported
             self.settings.child(
                 "acquisition_settings", "image_settings", "bin_x"
-            ).setLimits((1, self.controller.GetMaxBinningX()))
+            ).setLimits((1, self.camera_controller.GetMaxBinningX()))
         else:
             self.settings.child(
                 "acquisition_settings", "image_settings", "bin_x"
@@ -501,9 +503,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         self.settings.child(
             "acquisition_settings", "image_settings", "bin_y"
-        ).setLimits((1, self.controller.GetMaxBinningY()))
+        ).setLimits((1, self.camera_controller.GetMaxBinningY()))
 
-        if not self.controller.SupportedSensorFeature(
+        if not self.camera_controller.SupportedSensorFeature(
                 2
         ):  # Checks if Horizontal Cropping is supported
             self.settings.child(
@@ -520,9 +522,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         availableSpeeds = []
         for index, speed in enumerate(speeds):
             # try to set camera to the readout speed
-            if self.controller.SetReadOutSpeed(
+            if self.camera_controller.SetReadOutSpeed(
                     eval(
-                        "self.controller.readoutSpeed_"
+                        "self.camera_controller.readoutSpeed_"
                         + str(speed)
                         + "_"
                         + speedUnits[index]
@@ -540,38 +542,38 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         # Set Functions
         # =================================================
         # Set bit depth
-        self.controller.SetBitDepth(
+        self.camera_controller.SetBitDepth(
             self.settings.child(
                 "acquisition_settings", "image_settings", "bit_depth"
             ).value()
         )
 
         # Image size
-        imageSize = self.controller.GetImageSize()[0:2]
+        imageSize = self.camera_controller.GetImageSize()[0:2]
         self.settings.child("acquisition_settings", "N_x").setValue(imageSize[0])
         self.settings.child("acquisition_settings", "N_y").setValue(imageSize[1])
 
         # Exposure time
-        self.controller.SetExposure(
+        self.camera_controller.SetExposure(
             self.settings.child(
                 "acquisition_settings", "timing_settings", "exposure_time"
             ).value()
         )
-        self.controller.current_exposure_time = self.settings.child("acquisition_settings", "timing_settings",
+        self.camera_controller.current_exposure_time = self.settings.child("acquisition_settings", "timing_settings",
                                                                     "exposure_time").value()
 
         # Temperature control
         # =================================================
         self.settings.child("temperature_settings", "set_point").setLimits(
-            self.controller.TemperatureControl_Init()
+            self.camera_controller.TemperatureControl_Init()
         )  # Start temperature control and set available temperature range
 
         if self.settings.child("temperature_settings", "do_temperature").value():
-            self.controller.TemperatureControl_SetTemperature(
+            self.camera_controller.TemperatureControl_SetTemperature(
                 self.settings.child("temperature_settings", "set_point").value()
             )
         else:
-            self.controller.TemperatureControl_SwitchOff()
+            self.camera_controller.TemperatureControl_SwitchOff()
 
         self.timerTemp = self.startTimer(3000)  # Timer event fired every 3 seconds
         if not self.settings.child("temperature_settings", "check_temperature").value():
@@ -580,7 +582,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         self.update_image()
 
         # Set up callback
-        callback = GreateyesCallback(self.controller.DllIsBusy)
+        callback = GreateyesCallback(self.camera_controller.DllIsBusy)
         callback.exposure = self.settings.child(
             "acquisition_settings", "timing_settings", "exposure_time"
         ).value()
@@ -590,9 +592,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         self.callback_thread = QtCore.QThread()
         callback.moveToThread(self.callback_thread)
-        callback.data_sig.connect(
-            self.emit_data
-        )  # when the wait for acquisition returns (with data taken), emit_data will be fired
+
+        callback.frame_available_sig.connect(self.append_frame)
+        callback.acquisition_over_sig.connect(self.emit_data)
 
         self.callback_signal.connect(callback.wait_for_acquisition)
         self.callback_thread.callback = callback
@@ -600,7 +602,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
     def update_status(self):
         self.settings.child("camera_settings", "camera_status").setValue(
-            self.controller.StatusMSG
+            self.camera_controller.StatusMSG
         )
 
     def commit_settings(self, param):
@@ -612,7 +614,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 self.settings.child("camera_settings", "camera_IP").show()
 
         elif param.name() == "led_on":
-            self.controller.SetLEDStatus(param.value())
+            self.camera_controller.SetLEDStatus(param.value())
 
         elif param.name() == "check_meas_time":
             if param.value():
@@ -625,8 +627,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 ).hide()
 
         elif param.name() == "exposure_time":
-            self.controller.SetExposure(param.value())
-            self.controller.current_exposure_time = param.value()
+            self.camera_controller.SetExposure(param.value())
+            self.camera_controller.current_exposure_time = param.value()
             # Update callback
             self.callback_thread.callback.exposure = param.value()
 
@@ -636,8 +638,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         elif param.name() == "readout_speed":
             speed, unit = param.value().split()
-            if not self.controller.SetReadOutSpeed(
-                    eval("self.controller.readoutSpeed_" + speed + "_" + unit)
+            if not self.camera_controller.SetReadOutSpeed(
+                    eval("self.camera_controller.readoutSpeed_" + speed + "_" + unit)
             ):
                 self.emit_status(
                     ThreadCommand(
@@ -652,14 +654,14 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         elif param.name() == "set_point":
             if self.settings.child("temperature_settings", "do_temperature").value():
-                self.controller.TemperatureControl_SetTemperature(param.value())
+                self.camera_controller.TemperatureControl_SetTemperature(param.value())
 
         elif param.name() == "do_temperature":
             if param.value():
-                self.controller.TemperatureControl_Init()
-                self.controller.TemperatureControl_SetTemperature(param.value())
+                self.camera_controller.TemperatureControl_Init()
+                self.camera_controller.TemperatureControl_SetTemperature(param.value())
             else:
-                self.controller.TemperatureControl_SwitchOff()
+                self.camera_controller.TemperatureControl_SwitchOff()
 
         elif param.name() == "check_temperature":
             if param.value():
@@ -669,15 +671,15 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         elif param.name() == "capacity_mode":
             if param.value() == "Low Noise":
-                self.controller.SetupCapacityMode(False)
+                self.camera_controller.SetupCapacityMode(False)
             elif param.value() == "High Signal":
-                self.controller.SetupCapacityMode(True)
+                self.camera_controller.SetupCapacityMode(True)
 
         elif param.name() == "gain_mode":
             if param.value() == "Max Dynamic Range":
-                self.controller.SetupGain(0)
+                self.camera_controller.SetupGain(0)
             elif param.value() == "Highest Sensitivity":
-                self.controller.SetupGain(1)
+                self.camera_controller.SetupGain(1)
 
         self.update_status()
 
@@ -690,7 +692,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         1D numpy array
             Contains a vector of integer corresponding to the horizontal camera pixels.
         """
-        if self.controller is not None:
+        if self.camera_controller is not None:
             Nx = self.settings.child("acquisition_settings", "N_x").value()
             self.x_axis = Axis(
                 data=np.linspace(0, Nx - 1, Nx, dtype=int), label="Pixels"
@@ -710,7 +712,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         1D numpy array
             Contains a vector of integer corresponding to the vertical camera pixels.
         """
-        if self.controller is not None:
+        if self.camera_controller is not None:
 
             Ny = self.settings.child("acquisition_settings", "N_y").value()
             self.y_axis = Axis(
@@ -722,7 +724,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         return self.y_axis
 
     def update_image(self):
-        self.controller.SetupCropMode2D(
+        self.camera_controller.SetupCropMode2D(
             self.settings.child(
                 "acquisition_settings", "image_settings", "crop_x"
             ).value(),
@@ -730,7 +732,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 "acquisition_settings", "image_settings", "crop_y"
             ).value(),
         )
-        self.controller.SetBinningMode(
+        self.camera_controller.SetBinningMode(
             self.settings.child(
                 "acquisition_settings", "image_settings", "bin_x"
             ).value(),
@@ -738,13 +740,13 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 "acquisition_settings", "image_settings", "bin_y"
             ).value(),
         )
-        self.controller.ActivateCropMode(
+        self.camera_controller.ActivateCropMode(
             self.settings.child(
                 "acquisition_settings", "image_settings", "do_crop"
             ).value()
         )
 
-        imageSize = self.controller.GetImageSize()
+        imageSize = self.camera_controller.GetImageSize()
         self.settings.child("acquisition_settings", "N_x").setValue(imageSize[0])
         self.settings.child("acquisition_settings", "N_y").setValue(imageSize[1])
         self.update_status()
@@ -753,8 +755,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         """
         Timer event to periodically check the temperature
         """
-        sensor_temp = self.controller.TemperatureControl_GetTemperature(0)
-        tec_temp = self.controller.TemperatureControl_GetTemperature(1)
+        sensor_temp = self.camera_controller.TemperatureControl_GetTemperature(0)
+        tec_temp = self.camera_controller.TemperatureControl_GetTemperature(1)
         self.settings.child("temperature_settings", "sensor_temp").setValue(sensor_temp)
         self.settings.child("temperature_settings", "tec_temp").setValue(tec_temp)
 
@@ -762,7 +764,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         """
         Terminate the communication protocol
         """
-        if self.controller.DisconnectCamera():
+        if self.camera_controller.DisconnectCamera():
             if (
                     self.settings.child("camera_settings", "connection_type").value()
                     == "Ethernet"
@@ -777,7 +779,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             msg = "Error while disconnecting Camera"
         self.emit_status(ThreadCommand("Update_Status", [msg, "log"]))
 
-    def grab_data(self, Naverage=1, **kwargs):
+    def grab_data(self, Naverage=1, nframes=1, **kwargs):
         """
         Parameters
         ----------
@@ -785,9 +787,10 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         kwargs: (dict) of others optionals arguments
         """
         try:
+            self.buffer = []
             # Set exposure time if it was changed externally by the controller
             self.settings.child("acquisition_settings", "timing_settings", "exposure_time").setValue(
-                self.controller.current_exposure_time
+                self.camera_controller.current_exposure_time
             )
             self.commit_settings(self.settings.child("acquisition_settings", "timing_settings", "exposure_time"))
 
@@ -798,37 +801,41 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.prepare_data()
 
             # Start acquisition
-            self.controller.StartMeasurement_DynBitDepth(
+            self.camera_controller.StartMeasurement_DynBitDepth(
                 correctBias=self.settings.child(
                     "acquisition_settings", "do_correct_bias"
                 ).value()
             )
-            self.callback_signal.emit()  # will trigger the wait for acquisition
+            self.callback_signal.emit(nframes)  # will trigger the wait for acquisition
 
         except Exception as e:
             self.emit_status(ThreadCommand("Update_Status", [str(e), "log"]))
 
         ## remember to check measurement time if parameter is ticked
 
+    def append_frame(self):
+        data = self.camera_controller.GetMeasurementData_DynBitDepth()
+        self.buffer.append(data)
+
     def prepare_data(self):
-        width, height, bytesPerPixel = self.controller.GetImageSize()
+        width, height, bytesPerPixel = self.camera_controller.GetImageSize()
         # GetMeasurement function allocates memory by itself, no need to do it
 
         # Switches viewer type depending on image size
         data_shape = "Data2D" if height != 1 else "Data1D"
         if data_shape != self.data_shape:
             self.data_shape = data_shape
-            # init the viewers
-            self.data_grabed_signal_temp.emit(
-                [
-                    DataFromPlugins(
-                        name="Camera ",
-                        data=[np.squeeze(np.zeros((height, width)).astype(np.float))],
-                        dim=self.data_shape,
-                        labels="Camera",
-                    )
-                ]
-            )
+            # # init the viewers
+            # self.data_grabed_signal_temp.emit(
+            #     [
+            #         DataFromPlugins(
+            #             name="Camera ",
+            #             data=[np.squeeze(np.zeros((height, width)).astype(float))],
+            #             dim=self.data_shape,
+            #             labels="Camera",
+            #         )
+            #     ]
+            # )
 
     def emit_data(self):
         """
@@ -846,12 +853,12 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             else:
                 size_y = self.settings.child("acquisition_settings", "N_y").value()
                 size_x = self.settings.child("acquisition_settings", "N_x").value()
-                data = self.controller.GetMeasurementData_DynBitDepth()
+                data = self.buffer[0]
                 self.data_grabed_signal.emit(
                     [
                         DataFromPlugins(
                             name="Camera",
-                            data=[np.squeeze(data.reshape(size_y, size_x)).astype(np.float)],
+                            data=[np.squeeze(data.reshape(size_y, size_x)).astype(float)],
                             dim=self.data_shape,
                             labels="Camera",
                         )
@@ -869,13 +876,13 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                     self.settings.child(
                         "acquisition_settings", "timing_settings", "last_meas_time"
                     ).setValue(
-                        "{:.1f}".format(self.controller.GetLastMeasTimeNeeded() * 1000)
+                        "{:.1f}".format(self.camera_controller.GetLastMeasTimeNeeded() * 1000)
                     )
         except Exception as e:
             self.emit_status(ThreadCommand("Update_Status", [str(e), "log"]))
 
     def stop(self):
-        self.controller.StopMeasurement()
+        self.camera_controller.StopMeasurement()
         return ""
 
 
@@ -884,7 +891,8 @@ class GreateyesCallback(QtCore.QObject):
     Callback to wait for acquisitions to finish
     """
 
-    data_sig = QtCore.pyqtSignal()
+    acquisition_over_sig = QtCore.pyqtSignal()
+    frame_available_sig = QtCore.pyqtSignal()
 
     def __init__(
             self,
@@ -896,21 +904,26 @@ class GreateyesCallback(QtCore.QObject):
         self.exposure = 0
         self.timeout = 0
 
-    def wait_for_acquisition(self):
-        t_meas = 0
-        dt = 5  # refresh rate in ms
-        t_crit = (
-                self.exposure + self.timeout
-        )  # time after which we cancel the measurement
+    def wait_for_acquisition(self, nframes):
+        acquired_frames = 0
+        while acquired_frames < nframes:
+            t_meas = 0
+            dt = 5  # refresh rate in ms
+            t_crit = (
+                    self.exposure + self.timeout
+            )  # time after which we cancel the measurement
 
-        while self.wait_fn():  # DLL is busy
-            time.sleep(dt / 1000)
-            t_meas = t_meas + dt
-            if t_meas >= t_crit:  # if measurement takes took long
-                if ge.StopMeasurement():
-                    self.timedout = True
+            while self.wait_fn():  # DLL is busy
+                time.sleep(dt / 1000)
+                t_meas = t_meas + dt
+                if t_meas >= t_crit:  # if measurement takes took long
+                    if ge.StopMeasurement():
+                        self.timedout = True
 
-        self.data_sig.emit()  # Fired when DLL is not busy: measurement finished, or we stopped it
+            self.frame_available_sig.emit()  # Fired when DLL is not busy: measurement finished, or we stopped it
+            acquired_frames += 1
+
+        self.acquisition_over_sig.emit()
 
 
 def main():

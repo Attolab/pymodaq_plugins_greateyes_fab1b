@@ -18,25 +18,36 @@ HARDWARE_DIR = os.path.abspath(
 )
 sys.path.append(HARDWARE_DIR)
 os.add_dll_directory(HARDWARE_DIR)
-import greateyesSDK as ge
+
 from pymodaq.utils.parameter import utils as putils
 
-from daq_2Dviewer_GreateyesCCD import DAQ_2DViewer_GreateyesCCD
-from pymodaq_plugins_uniblitz.daq_move_plugins.daq_move_VLM1 import DAQ_Move_VLM1
+from .daq_2Dviewer_GreateyesCCD import DAQ_2DViewer_GreateyesCCD
+from ...daq_move_plugins.daq_move_VLM1 import DAQ_Move_VLM1
 
 
 class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
     """ """
 
-    param_camera = DAQ_2DViewer_GreateyesCCD.params
+    params_camera = DAQ_2DViewer_GreateyesCCD.params
     params_shutter = DAQ_Move_VLM1.params
+    d = putils.get_param_dict_from_name(params_shutter, 'multiaxes')
+    if d is not None:
+        d['visible'] = False
 
-    params = [{'title': 'Shutter:', 'name': 'shutter_bool', 'type': 'led', 'value': False},
-              {'title': 'ATAS Mode:', 'name': 'atas_mode', 'type': 'led', 'value': False}]
+    shutter_status = False
+    pump_off = None
+    pump_on = None
+
+    params = [{'title': 'Shutter:', 'name': 'shutter_bool', 'type': 'led_push', 'value': False},
+              {'title': 'ATAS Mode:', 'name': 'atas_mode', 'type': 'led_push', 'value': False},
+              {'title': 'Displayed quantity', 'name': 'quantity', 'type': 'list', 'values': ['dR/R', 'DeltaOD'], 'value': 'dR/R'}] \
+             + params_camera + params_shutter
 
     def __init__(self, parent=None, params_state=None):
         DAQ_Move_VLM1.__init__(self, parent, params_state)
         DAQ_2DViewer_GreateyesCCD.__init__(self, parent, params_state)
+        self.camera_controller = None
+        self.shutter_controller = None
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -44,7 +55,7 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
         shutter_initialized = DAQ_Move_VLM1.ini_stage(self, controller)
         QtWidgets.QApplication.processEvents()
         if shutter_initialized.initialized:
-            self.move_Home()    # close shutter
+            self.move_Home()  # close shutter
 
         camera_initialized = DAQ_2DViewer_GreateyesCCD.ini_detector(self, controller)
         QtWidgets.QApplication.processEvents()
@@ -54,26 +65,117 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
 
     def commit_settings(self, param):
         """ """
-        if 'camera_settings' in putils.get_param_path(param):
-            DAQ_2DViewer_GreateyesCCD.commit_settings(self, param)
-        elif 'spectro_settings' in putils.get_param_path(param):
+
+        if param.name() == 'COM_port':
             DAQ_Move_VLM1.commit_settings(self, param)
         elif param.name() == 'shutter_bool':
             if param.value():
                 self.move_Abs(1)
             else:
                 self.move_Abs(0)
+        elif param.name() == 'atas_mode':
+            pass
+        elif param.name() == 'quantity':
+            pass
+        else:
+            DAQ_2DViewer_GreateyesCCD.commit_settings(self, param)
+            
         QtWidgets.QApplication.processEvents()
-
 
     def close(self):
         DAQ_2DViewer_GreateyesCCD.close(self)
-        DAQ_Move_VLM1.close(self)
+
+    def move_Abs(self, position):
+        DAQ_Move_VLM1.move_Abs(self, position)
+        if position == 0:
+            self.settings.child('shutter_bool').setValue(False)
+        else:
+            self.settings.child('shutter_bool').setValue(True)
 
     def grab_data(self, Naverage=1, **kwargs):
-        DAQ_2DViewer_GreateyesCCD.grab_data(self, Naverage, **kwargs)
+
+        if not (self.settings['atas_mode'] and self.data_shape == 'Data1D'):
+            # normal mode
+            DAQ_2DViewer_GreateyesCCD.grab_data(self, Naverage, **kwargs)
+
+        else:   #atas mode
+            size_y = self.settings.child("acquisition_settings", "N_y").value()
+            size_x = self.settings.child("acquisition_settings", "N_x").value()
+
+            self.move_Abs(0)
+            QtCore.QThread.msleep(16)   #opening time of shutter
+
+            self.camera_controller.StartMeasurement_DynBitDepth(
+                correctBias=self.settings.child(
+                    "acquisition_settings", "do_correct_bias"
+                ).value()
+            )
+            t_meas = 0
+            while self.camera_controller.DllIsBusy():  # DLL is busy
+                time.sleep(0.005)
+                t_meas += 5
+                if t_meas >= self.settings["acquisition_settings", "timing_settings", "timeout"]:  # if measurement takes took long
+                    raise Warning('Measurement timeout')
+            print(t_meas)
+            pump_off = self.camera_controller.GetMeasurementData_DynBitDepth()
+            pump_off = np.squeeze(pump_off.reshape(size_y, size_x)).astype(float)
+
+            #now do pump on
+            self.move_Abs(1)
+            QtCore.QThread.msleep(16)  # opening time of shutter
+
+            self.camera_controller.StartMeasurement_DynBitDepth(
+                correctBias=self.settings.child(
+                    "acquisition_settings", "do_correct_bias"
+                ).value()
+            )
+            t_meas = 0
+            while self.camera_controller.DllIsBusy():  # DLL is busy
+                time.sleep(0.005)
+                t_meas += 5
+                if t_meas >= self.settings["acquisition_settings", "timing_settings", "timeout"]:  # if measurement takes took long
+                    raise Warning('Measurement timeout')
+            pump_on = self.camera_controller.GetMeasurementData_DynBitDepth()
+            pump_on = np.squeeze(pump_on.reshape(size_y, size_x)).astype(float)
+
+            if self.settings.child(
+                    "acquisition_settings", "timing_settings", "check_meas_time"
+            ):
+                self.settings.child(
+                    "acquisition_settings", "timing_settings", "last_meas_time"
+                ).setValue(
+                    "{:.1f}".format(self.camera_controller.GetLastMeasTimeNeeded() * 1000)
+                )
+
+            data_to_emit = [pump_off, pump_on]
+            if self.settings['quantity'] == 'dR/R':
+                #od = (pump_on - pump_off) / pump_off
+                od = pump_on/pump_off
+            elif self.settings['quantity'] == 'DeltaOD':
+                od = -np.real(np.log10(pump_on / pump_off))
+            od[np.isnan(od)] = 0
+            od[np.isinf(od)] = 0
+
+            data_list = [DataFromPlugins(
+                name="Camera",
+                data=data_to_emit,
+                dim=self.data_shape,
+                labels=['Pump off', 'Pump on'],
+            ),
+                DataFromPlugins(
+                    name="Processed signal",
+                    data=[od],
+                    dim=self.data_shape,
+                    labels=[self.settings['quantity']],
+                )
+            ]
+
+            self.data_grabed_signal.emit(data_list)
+            QtWidgets.QApplication.processEvents()
+            self.move_Abs(0)
 
     def stop(self):
+        self.move_Abs(0)
         DAQ_2DViewer_GreateyesCCD.stop(self)
 
 
