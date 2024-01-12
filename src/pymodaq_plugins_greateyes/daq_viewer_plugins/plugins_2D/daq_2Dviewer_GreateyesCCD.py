@@ -3,14 +3,13 @@ import time
 import sys, os
 from easydict import EasyDict as edict
 from PyQt5 import QtWidgets, QtCore
-from pymodaq.daq_utils.daq_utils import (
+from pymodaq.utils.daq_utils import (
     ThreadCommand,
     getLineInfo,
-    DataFromPlugins,
-    Axis,
 )
-from pymodaq.daq_viewer.utility_classes import DAQ_Viewer_base, comon_parameters
-from pymodaq.daq_utils.parameter.utils import iter_children
+from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
+from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters
+from pymodaq.utils.parameter.utils import iter_children
 
 # Import GreatEyes SDK: In the hardware folder must be placed greateyesSDK.py, greateyes.dll, geCommLib.dll
 HARDWARE_DIR = os.path.abspath(
@@ -37,7 +36,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                     "title": "Connection type",
                     "name": "connection_type",
                     "type": "list",
-                    "values": ["Ethernet", "USB"],
+                    "limits": ["Ethernet", "USB"],
                     "readonly": False,
                 },
                 {
@@ -314,10 +313,6 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         try:
             # Start initializing
-            self.emit_status(
-                ThreadCommand("show_splash", ["Initializing Greateyes CCD Camera"])
-            )
-
             if self.settings.child(("controller_status")).value() == "Slave":
                 if controller is None:
                     raise Exception(
@@ -334,38 +329,13 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.update_status()
             self.ini_greateyes_camera()
 
-            self.x_axis = self.get_xaxis()
-            self.y_axis = self.get_yaxis()
+            self.get_xaxis()
+            self.get_yaxis()
             self.status.x_axis = self.x_axis
             self.status.y_axis = self.y_axis
 
-            self.grab_data(live=False)
-            # # initialize viewers pannel with the future type of data
-            # # we perform a blocking measurement for simplicity here.
-            #
-            # self.emit_status(ThreadCommand("show_splash", ["Taking one image"]))
-            #
-            # self.data_grabed_signal_temp.emit(
-            #     [
-            #         DataFromPlugins(
-            #             name="CCD Image",
-            #             data=[
-            #                 self.camera_controller.PerformMeasurement_Blocking_DynBitDepth(
-            #                     correctBias=self.settings.child(
-            #                         "acquisition_settings", "do_correct_bias"
-            #                     ).value()
-            #                 ).astype(float)
-            #             ],
-            #             dim="Data2D",
-            #             labels=["dat0"],
-            #             x_axis=self.y_axis,
-            #             y_axis=self.x_axis,
-            #         ),
-            #     ]
-            # )
-            self.settings.child(
-                "acquisition_settings", "timing_settings", "last_meas_time"
-            ).setValue("{:.1f}".format(self.camera_controller.GetLastMeasTimeNeeded() * 1000))
+            # initialize viewers pannel with the future type of data
+            self.prepare_data()
 
             self.status.info = "Camera initialized correctly"
             self.status.initialized = True
@@ -409,9 +379,7 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             if connectionSetupWorked:
                 connectionSetupWorked = self.camera_controller.ConnectToSingleCameraServer()
                 if connectionSetupWorked:
-                    self.emit_status(
-                        ThreadCommand("show_splash", ["Connected to Camera Server"])
-                    )
+                    pass
                 else:
                     raise Exception("Could not connect to camera")
         else:
@@ -452,12 +420,9 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
             self.settings.child("camera_settings", "camera_model_str").setValue(
                 CameraModel[1]
             )
-            self.emit_status(
-                ThreadCommand("show_splash", ["Connected to Camera " + CameraModel[1]])
-            )
 
             if self.camera_controller.InitCamera(addr=addr):
-                self.emit_status(ThreadCommand("show_splash", ["Camera Initialized"]))
+                self.emit_status(ThreadCommand("Update_Status", ["Camera Initialized","log"]))
             else:
                 self.camera_controller.DisconnectCamera()
                 raise Exception(
@@ -477,9 +442,6 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
 
         # Get Functions
         # =================================================
-        self.emit_status(
-            ThreadCommand("show_splash", ["Obtaining Camera parameters..."])
-        )
         self.settings.child("camera_settings", "firmware_version").setValue(
             self.camera_controller.GetFirmwareVersion()
         )
@@ -694,11 +656,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         """
         if self.camera_controller is not None:
             Nx = self.settings.child("acquisition_settings", "N_x").value()
-            self.x_axis = Axis(
-                data=np.linspace(0, Nx - 1, Nx, dtype=int), label="Pixels"
-            )
-
-            self.emit_x_axis()
+            xaxis = np.linspace(0, Nx, Nx, endpoint=False)
+            self.x_axis = Axis(data=xaxis, label='Pixels', index=1)
         else:
             raise (Exception("Controller not defined"))
         return self.x_axis
@@ -715,10 +674,8 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         if self.camera_controller is not None:
 
             Ny = self.settings.child("acquisition_settings", "N_y").value()
-            self.y_axis = Axis(
-                data=np.linspace(0, Ny - 1, Ny, dtype=int), label="Pixels"
-            )
-            self.emit_y_axis()
+            yaxis = np.linspace(0, Ny, Ny, endpoint=False)
+            self.y_axis = Axis(data=yaxis, label='Pixels', index=0)
         else:
             raise (Exception("Controller not defined"))
         return self.y_axis
@@ -822,20 +779,24 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
         # GetMeasurement function allocates memory by itself, no need to do it
 
         # Switches viewer type depending on image size
-        data_shape = "Data2D" if height != 1 else "Data1D"
+        if height != 1:
+            data_shape = "Data2D"
+            self.get_yaxis()
+            axes = [self.x_axis, self.y_axis]
+        else:
+            data_shape = "Data1D"
+            self.x_axis.index = 0
+            axes = [self.x_axis]
+
         if data_shape != self.data_shape:
             self.data_shape = data_shape
-            # # init the viewers
-            # self.data_grabed_signal_temp.emit(
-            #     [
-            #         DataFromPlugins(
-            #             name="Camera ",
-            #             data=[np.squeeze(np.zeros((height, width)).astype(float))],
-            #             dim=self.data_shape,
-            #             labels="Camera",
-            #         )
-            #     ]
-            # )
+            self.axes = axes
+            # init the viewers
+            self.dte_signal_temp.emit(DataToExport('Greateyes',
+                                                   data=[DataFromPlugins(name='CCD Image', data=[
+                                                       np.squeeze(np.zeros((height, width)).astype(float))],
+                                                                         dim=self.data_shape, labels=['Camera'],
+                                                                         axes=self.axes), ]))
 
     def emit_data(self):
         """
@@ -854,16 +815,10 @@ class DAQ_2DViewer_GreateyesCCD(DAQ_Viewer_base):
                 size_y = self.settings.child("acquisition_settings", "N_y").value()
                 size_x = self.settings.child("acquisition_settings", "N_x").value()
                 data = self.buffer[0]
-                self.data_grabed_signal.emit(
-                    [
-                        DataFromPlugins(
-                            name="Camera",
-                            data=[np.squeeze(data.reshape(size_y, size_x)).astype(float)],
-                            dim=self.data_shape,
-                            labels="Camera",
-                        )
-                    ]
-                )
+                self.dte_signal.emit(DataToExport('Greateyes',
+                                                  data=[DataFromPlugins(name='CCD Image', data=[
+                                                      np.squeeze(data.reshape(size_y, size_x)).astype(float)],
+                                                                        dim=self.data_shape, axes=self.axes), ]))
                 self.settings.child("camera_settings", "camera_status").setValue(
                     "Data received"
                 )
@@ -935,8 +890,8 @@ def main():
     """
     import sys
     from PyQt5 import QtWidgets
-    from pymodaq.daq_utils.gui_utils import DockArea
-    from pymodaq.daq_viewer.daq_viewer_main import DAQ_Viewer
+    from pymodaq.utils.gui_utils import DockArea
+    from pymodaq.control_modules.daq_viewer import DAQ_Viewer
     from pathlib import Path
 
     app = QtWidgets.QApplication(sys.argv)
@@ -947,7 +902,7 @@ def main():
     win.setWindowTitle("PyMoDAQ Viewer")
     detector = Path(__file__).stem[13:]
     det_type = f"DAQ{Path(__file__).stem[4:6].upper()}"
-    prog = DAQ_Viewer(area, title="Testing", DAQ_type=det_type)
+    prog = DAQ_Viewer(area, title="Testing")
     win.show()
     prog.detector = detector
     prog.init_det()
