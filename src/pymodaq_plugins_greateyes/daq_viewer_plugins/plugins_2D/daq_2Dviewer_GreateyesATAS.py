@@ -40,7 +40,9 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
 
     params = [{'title': 'Shutter:', 'name': 'shutter_bool', 'type': 'led_push', 'value': False},
               {'title': 'ATAS Mode:', 'name': 'atas_mode', 'type': 'led_push', 'value': False},
-              {'title': 'Displayed quantity', 'name': 'quantity', 'type': 'list', 'values': ['dR/R', 'DeltaOD'], 'value': 'dR/R'}] \
+              {'title': 'Displayed quantity', 'name': 'quantity', 'type': 'list', 'values': ['dR/R', 'DeltaOD'], 'value': 'dR/R'},
+              {'title': 'Set background', 'name': 'do_bkg', 'type': 'bool_push', 'value': False},
+              {'title': 'Clear background', 'name': 'clear_bkg', 'type': 'bool_push', 'value': False}] \
              + params_camera + params_shutter
 
     def __init__(self, parent=None, params_state=None):
@@ -48,6 +50,8 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
         DAQ_2DViewer_GreateyesCCD.__init__(self, parent, params_state)
         self.camera_controller = None
         self.shutter_controller = None
+        self.background_poff = None
+        self.background_pon = None
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -77,6 +81,13 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
             pass
         elif param.name() == 'quantity':
             pass
+        elif param.name() == 'do_bkg':
+            self.take_background()
+            param.setValue(False)
+        elif param.name() == 'clear_bkg':
+            self.background_poff = None
+            self.background_pon = None
+            param.setValue(False)
         else:
             DAQ_2DViewer_GreateyesCCD.commit_settings(self, param)
             
@@ -116,7 +127,6 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
                 t_meas += 5
                 if t_meas >= self.settings["acquisition_settings", "timing_settings", "timeout"]:  # if measurement takes took long
                     raise Warning('Measurement timeout')
-            print(t_meas)
             pump_off = self.camera_controller.GetMeasurementData_DynBitDepth()
             pump_off = np.squeeze(pump_off.reshape(size_y, size_x)).astype(float)
 
@@ -147,10 +157,15 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
                     "{:.1f}".format(self.camera_controller.GetLastMeasTimeNeeded() * 1000)
                 )
 
+            if self.background_poff is not None:
+                pump_off -= self.background_poff
+            if self.background_pon is not None:
+                pump_on -= self.background_pon
+
             data_to_emit = [pump_off, pump_on]
             if self.settings['quantity'] == 'dR/R':
-                #od = (pump_on - pump_off) / pump_off
                 od = pump_on/pump_off
+                od = (pump_on - pump_off) / pump_off
             elif self.settings['quantity'] == 'DeltaOD':
                 od = -np.real(np.log10(pump_on / pump_off))
             od[np.isnan(od)] = 0
@@ -173,6 +188,12 @@ class DAQ_2DViewer_GreateyesATAS(DAQ_2DViewer_GreateyesCCD, DAQ_Move_VLM1):
             self.data_grabed_signal.emit(data_list)
             QtWidgets.QApplication.processEvents()
             self.move_Abs(0)
+
+    def take_background(self):
+        datas = self.parent.datas[0]['data']
+        self.background_poff = datas[0]
+        self.background_pon = datas[1]
+
 
     def stop(self):
         self.move_Abs(0)
